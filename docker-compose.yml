@@ -1,0 +1,79 @@
+# ====================================================================
+# Docker Compose Configuration - KursusHub Application
+# Copyright 2026 - halkh-systems.com
+# ====================================================================
+
+version: '3.8'
+
+services:
+  # ------------------------------------------------------------------
+  # 1. PostgreSQL Database Service
+  # ------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: kursushub_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kursushub_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secret_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01_init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kursushub_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - kursushub_net
+
+  # ------------------------------------------------------------------
+  # 2. KursusHub Full-Stack Application Service
+  # ------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kursushub_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PORT: ${PORT:-3000}
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secret_password}@postgres:5432/${POSTGRES_DB:-kursushub_db}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-kursushub_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secret_password}
+      SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-15}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_kursushub_2026_key_halkh}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-AdminSecret2026!}
+      API_INTEGRATION_KEY: ${API_INTEGRATION_KEY:-kursus_api_secret_key_2026}
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - kursushub_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  kursushub_net:
+    driver: bridge
