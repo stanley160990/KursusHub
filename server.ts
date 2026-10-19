@@ -142,7 +142,7 @@ async function initDatabaseSchema() {
     await pgPool.query(
       `INSERT INTO admin_users (id, username, password_hash)
        VALUES ($1, $2, $3)
-       ON CONFLICT (username) DO NOTHING`,
+       ON CONFLICT (username) DO UPDATE SET password_hash = $3`,
       ['admin-01', ADMIN_USER, adminPassHash]
     );
 
@@ -500,19 +500,20 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 
   let authenticated = false;
-  let adminUsername = username;
+  let adminUsername = String(username).trim();
+  const inputPassword = String(password);
 
   if (pgPool && pgConnected) {
     try {
-      const dbResult = await pgPool.query('SELECT * FROM admin_users WHERE username = $1', [username]);
+      const dbResult = await pgPool.query('SELECT * FROM admin_users WHERE username = $1', [adminUsername]);
       if (dbResult.rows.length > 0) {
         const dbAdmin = dbResult.rows[0];
         let match = false;
-        if (password === dbAdmin.password_hash) {
+        if (inputPassword === dbAdmin.password_hash) {
           match = true;
         } else {
           try {
-            match = await bcrypt.compare(password, dbAdmin.password_hash);
+            match = await bcrypt.compare(inputPassword, dbAdmin.password_hash);
           } catch {
             match = false;
           }
@@ -521,7 +522,11 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
           authenticated = true;
           adminUsername = dbAdmin.username;
           await pgPool.query('UPDATE admin_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [dbAdmin.id]);
+        } else {
+          return res.status(401).json({ error: 'Password admin tidak valid.' });
         }
+      } else {
+        return res.status(401).json({ error: 'Username admin tidak terdaftar di database.' });
       }
     } catch (err) {
       console.error('[PostgreSQL Admin Auth Error]:', err);
@@ -529,8 +534,8 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 
   if (!authenticated) {
-    const isUserValid = username === ADMIN_USER;
-    const isPassValid = password === ADMIN_PASS;
+    const isUserValid = adminUsername === ADMIN_USER;
+    const isPassValid = inputPassword === ADMIN_PASS;
     if (isUserValid && isPassValid) {
       authenticated = true;
       adminUsername = ADMIN_USER;

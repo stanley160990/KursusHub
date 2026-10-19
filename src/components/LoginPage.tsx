@@ -19,7 +19,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, defaultAdm
     setIsLoading(true);
 
     try {
-      // Authenticate via backend API or instant fallback
+      // Authenticate strictly via backend API
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -31,15 +31,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, defaultAdm
       if (res.ok && data.success) {
         onLoginSuccess(data.admin.username);
       } else {
-        // Fallback for direct client-side dev check
-        if (username === defaultAdminUser && (password === 'AdminSecret2026!' || password.length >= 6)) {
-          onLoginSuccess(username);
-        } else {
-          setErrorMessage(data.error || 'Username atau password admin salah.');
-        }
+        setErrorMessage(data.error || 'Username atau password admin salah.');
       }
     } catch {
-      // Local check fallback
+      // Local fallback ONLY when backend API is disconnected, with strict password match
       if (username === defaultAdminUser && password === 'AdminSecret2026!') {
         onLoginSuccess(username);
       } else {
