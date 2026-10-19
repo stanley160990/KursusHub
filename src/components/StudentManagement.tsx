@@ -558,12 +558,6 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col gap-1">
-                        {student.plainPasswordPreview && (
-                          <div className="flex items-center gap-1 text-[11px] font-mono text-emerald-800 font-semibold">
-                            <Key className="w-3 h-3 text-emerald-600" />
-                            <span>Pass: {student.plainPasswordPreview}</span>
-                          </div>
-                        )}
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
                             BCrypt Hash
@@ -571,10 +565,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                           <button
                             type="button"
                             onClick={() => setShowHashId(showHashId === student.id ? null : student.id)}
-                            className="text-[10px] text-slate-400 hover:text-slate-700 flex items-center gap-0.5"
+                            className="text-[10px] text-slate-400 hover:text-slate-700 flex items-center gap-0.5 cursor-pointer"
                           >
                             {showHashId === student.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                            <span>{showHashId === student.id ? 'Tutup' : 'Lihat'}</span>
+                            <span>{showHashId === student.id ? 'Tutup Hash' : 'Lihat Hash'}</span>
                           </button>
                         </div>
                         {showHashId === student.id && (
@@ -845,13 +839,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                    <span>Password saat ini tetap aktif dan tidak diubah.</span>
-                    {editingStudent.plainPasswordPreview && (
-                      <span className="font-mono text-emerald-800 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
-                        Pass: {editingStudent.plainPasswordPreview}
-                      </span>
-                    )}
+                  <div className="text-[11px] text-slate-500">
+                    <span>Password saat ini tetap terenkripsi aktif dan tidak diubah.</span>
                   </div>
                 )}
               </div>

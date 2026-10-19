@@ -150,7 +150,6 @@ export const LoginLogsViewer: React.FC<LoginLogsViewerProps> = ({
                     <th className="py-3 px-4">NPM</th>
                     <th className="py-3 px-4">Nama Mahasiswa</th>
                     <th className="py-3 px-4">Waktu Login</th>
-                    <th className="py-3 px-4">Alamat IP Klien</th>
                     <th className="py-3 px-4 text-right">Sumber Data</th>
                   </tr>
                 </thead>
@@ -177,10 +176,6 @@ export const LoginLogsViewer: React.FC<LoginLogsViewerProps> = ({
                           <Clock className="w-3.5 h-3.5 text-pink-600" />
                           <span>{item.loginTimeGmt}</span>
                         </div>
-                      </td>
-
-                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                        {item.clientIp || '127.0.0.1'}
                       </td>
 
                       <td className="py-3 px-4 text-right">
