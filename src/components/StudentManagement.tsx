@@ -460,7 +460,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
             >
               {courses.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.name} ({c.status === 'inactive' ? 'Inactive' : 'Active'})
                 </option>
               ))}
             </select>

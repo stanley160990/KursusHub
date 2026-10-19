@@ -21,10 +21,125 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ------------------------------------------------------------------
-// PostgreSQL Connection Pool Setup (Graceful Fallback)
+// PostgreSQL Connection Pool Setup & Schema Initialization
 // ------------------------------------------------------------------
 let pgPool: pg.Pool | null = null;
 let pgConnected = false;
+
+async function initDatabaseSchema() {
+  if (!pgPool) return;
+  try {
+    console.log('[PostgreSQL] Verifying & initializing database schema...');
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS universities (
+        id VARCHAR(64) PRIMARY KEY,
+        code VARCHAR(50),
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS courses (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        university_id VARCHAR(64),
+        university_name VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS students (
+        id VARCHAR(64) PRIMARY KEY,
+        course_id VARCHAR(64) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        npm VARCHAR(50) NOT NULL,
+        class_name VARCHAR(100) NOT NULL,
+        university VARCHAR(255) NOT NULL,
+        faculty VARCHAR(255) NOT NULL,
+        study_program VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        access_hours VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS instructors_assistants (
+        id VARCHAR(64) PRIMARY KEY,
+        course_id VARCHAR(64) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        role_type VARCHAR(50) NOT NULL,
+        specific_role VARCHAR(255) NOT NULL,
+        university VARCHAR(255),
+        study_program VARCHAR(255),
+        username VARCHAR(100),
+        password_hash VARCHAR(255),
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS login_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        course_id VARCHAR(64) NOT NULL,
+        npm VARCHAR(50) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        login_time_gmt VARCHAR(150) NOT NULL,
+        client_ip VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('[PostgreSQL] Database schema structure verified successfully.');
+
+    // Optional seeding only when explicitly requested via env variable SEED_DEFAULT_DATA=true
+    if (process.env.SEED_DEFAULT_DATA === 'true') {
+      const courseRes = await pgPool.query('SELECT COUNT(*) FROM courses');
+      if (parseInt(courseRes.rows[0].count, 10) === 0) {
+        console.log('[PostgreSQL] SEED_DEFAULT_DATA=true detected. Seeding default records...');
+        for (const c of memoryCourses) {
+          await pgPool.query(
+            `INSERT INTO courses (id, name, description, university_id, university_name, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+            [c.id, c.name, c.description, c.university_id || '', c.university_name || '', c.status || 'active', c.created_at]
+          );
+        }
+        for (const s of memoryStudents) {
+          await pgPool.query(
+            `INSERT INTO students (id, course_id, name, npm, class_name, university, faculty, study_program, password_hash, access_hours, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
+            [s.id, s.course_id, s.name, s.npm, s.class_name, s.university, s.faculty, s.study_program, s.password_hash, s.access_hours, s.created_at]
+          );
+        }
+        for (const i of memoryInstructors) {
+          await pgPool.query(
+            `INSERT INTO instructors_assistants (id, course_id, name, role_type, specific_role, university, study_program, username, password_hash, email, phone, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ON CONFLICT (id) DO NOTHING`,
+            [i.id, i.course_id, i.name, i.role_type, i.specific_role, i.university, i.study_program, i.username, i.password_hash, i.email, i.phone, i.created_at]
+          );
+        }
+        for (const l of memoryLogins) {
+          await pgPool.query(
+            `INSERT INTO login_logs (id, course_id, npm, name, login_time_gmt, client_ip, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+            [l.id, l.course_id, l.npm, l.nama, l.login_time_gmt, l.client_ip, l.created_at]
+          );
+        }
+        console.log('[PostgreSQL] Default records seeded successfully.');
+      }
+    }
+  } catch (err) {
+    console.error('[PostgreSQL Schema Init Error]:', err);
+  }
+}
 
 if (process.env.DATABASE_URL || process.env.POSTGRES_HOST) {
   try {
@@ -38,13 +153,14 @@ if (process.env.DATABASE_URL || process.env.POSTGRES_HOST) {
       connectionTimeoutMillis: 2000,
     });
 
-    pgPool.query('SELECT NOW()', (err) => {
+    pgPool.query('SELECT NOW()', async (err) => {
       if (err) {
         console.log('[PostgreSQL] Database not reachable locally, running in memory-resilient mode:', err.message);
         pgConnected = false;
       } else {
         console.log('[PostgreSQL] Connected successfully to database');
         pgConnected = true;
+        await initDatabaseSchema();
       }
     });
   } catch (err) {
@@ -355,6 +471,86 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 // ------------------------------------------------------------------
 // Sync endpoints between Client and Server memory / database
 // ------------------------------------------------------------------
+app.get('/api/data/all', async (_req: Request, res: Response) => {
+  try {
+    if (pgPool && pgConnected) {
+      const coursesRes = await pgPool.query('SELECT * FROM courses ORDER BY created_at DESC');
+      const studentsRes = await pgPool.query('SELECT * FROM students ORDER BY created_at DESC');
+      const instructorsRes = await pgPool.query('SELECT * FROM instructors_assistants ORDER BY created_at DESC');
+      const loginsRes = await pgPool.query('SELECT * FROM login_logs ORDER BY created_at DESC');
+
+      const mappedCourses = coursesRes.rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description || '',
+        universityId: c.university_id || '',
+        universityName: c.university_name || '',
+        dates: [],
+        status: c.status || 'active',
+        createdAt: c.created_at,
+      }));
+
+      const mappedStudents = studentsRes.rows.map((s) => ({
+        id: s.id,
+        courseId: s.course_id,
+        name: s.name,
+        npm: s.npm,
+        className: s.class_name,
+        university: s.university,
+        faculty: s.faculty,
+        studyProgram: s.study_program,
+        passwordHash: s.password_hash,
+        accessHours: s.access_hours,
+        createdAt: s.created_at,
+      }));
+
+      const mappedInstructors = instructorsRes.rows.map((i) => ({
+        id: i.id,
+        courseId: i.course_id,
+        name: i.name,
+        roleType: i.role_type,
+        specificRole: i.specific_role,
+        university: i.university || '',
+        studyProgram: i.study_program || '',
+        username: i.username || '',
+        passwordHash: i.password_hash || '',
+        email: i.email || '',
+        phone: i.phone || '',
+        createdAt: i.created_at,
+      }));
+
+      const mappedLogins = loginsRes.rows.map((l) => ({
+        id: l.id,
+        courseId: l.course_id,
+        npm: l.npm,
+        name: l.name,
+        loginTimeGmt: l.login_time_gmt,
+        clientIp: l.client_ip,
+        createdAt: l.created_at,
+      }));
+
+      return res.json({
+        postgresConnected: true,
+        courses: mappedCourses,
+        students: mappedStudents,
+        instructors: mappedInstructors,
+        logins: mappedLogins,
+      });
+    }
+
+    return res.json({
+      postgresConnected: false,
+      courses: memoryCourses,
+      students: memoryStudents,
+      instructors: memoryInstructors,
+      logins: memoryLogins,
+    });
+  } catch (err) {
+    console.error('[PostgreSQL Fetch All Data Error]:', err);
+    return res.status(500).json({ postgresConnected: false, error: String(err) });
+  }
+});
+
 app.post('/api/sync/student', async (req: Request, res: Response) => {
   try {
     const student = req.body;
@@ -362,17 +558,17 @@ app.post('/api/sync/student', async (req: Request, res: Response) => {
       const idx = memoryStudents.findIndex((s) => s.id === student.id || (s.npm === student.npm && s.course_id === student.courseId));
       const record: InMemoryStudent = {
         id: student.id,
-        course_id: student.courseId,
+        course_id: student.courseId || student.course_id,
         name: student.name,
         npm: student.npm,
-        class_name: student.className,
+        class_name: student.className || student.class_name,
         university: student.university,
         faculty: student.faculty,
-        study_program: student.studyProgram,
-        password_hash: student.passwordHash,
-        plain_password_preview: student.plainPasswordPreview,
-        access_hours: student.accessHours,
-        created_at: student.createdAt || new Date().toISOString(),
+        study_program: student.studyProgram || student.study_program,
+        password_hash: student.passwordHash || student.password_hash,
+        plain_password_preview: student.plainPasswordPreview || student.plain_password_preview,
+        access_hours: student.accessHours || student.access_hours,
+        created_at: student.createdAt || student.created_at || new Date().toISOString(),
       };
       if (idx >= 0) {
         memoryStudents[idx] = record;
@@ -388,14 +584,34 @@ app.post('/api/sync/student', async (req: Request, res: Response) => {
              ON CONFLICT (id) DO UPDATE SET name = $3, npm = $4, class_name = $5, university = $6, faculty = $7, study_program = $8, password_hash = $9, access_hours = $10`,
             [record.id, record.course_id, record.name, record.npm, record.class_name, record.university, record.faculty, record.study_program, record.password_hash, record.access_hours]
           );
-        } catch {
-          // ignore postgres error
+          console.log(`[PostgreSQL] Upserted student: ${record.name} (${record.npm})`);
+        } catch (dbErr) {
+          console.error('[PostgreSQL Student Sync Error]:', dbErr);
         }
       }
     }
     return res.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[Sync Student Route Error]:', err);
     return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/student/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const idx = memoryStudents.findIndex((s) => s.id === id);
+    if (idx >= 0) {
+      memoryStudents.splice(idx, 1);
+    }
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM students WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted student ID: ${id}`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete Student Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
   }
 });
 
@@ -406,18 +622,18 @@ app.post('/api/sync/instructor', async (req: Request, res: Response) => {
       const idx = memoryInstructors.findIndex((i) => i.id === inst.id);
       const record: InMemoryInstructor = {
         id: inst.id,
-        course_id: inst.courseId,
+        course_id: inst.courseId || inst.course_id,
         name: inst.name,
-        role_type: inst.roleType,
-        specific_role: inst.specificRole,
+        role_type: inst.roleType || inst.role_type,
+        specific_role: inst.specificRole || inst.specific_role,
         university: inst.university || '',
-        study_program: inst.studyProgram || '',
+        study_program: inst.studyProgram || inst.study_program || '',
         username: inst.username || '',
-        password_hash: inst.passwordHash || '',
-        plain_password_preview: inst.plainPasswordPreview || '',
+        password_hash: inst.passwordHash || inst.password_hash || '',
+        plain_password_preview: inst.plainPasswordPreview || inst.plain_password_preview || '',
         email: inst.email || '',
         phone: inst.phone || '',
-        created_at: inst.createdAt || new Date().toISOString(),
+        created_at: inst.createdAt || inst.created_at || new Date().toISOString(),
       };
       if (idx >= 0) {
         memoryInstructors[idx] = record;
@@ -433,14 +649,34 @@ app.post('/api/sync/instructor', async (req: Request, res: Response) => {
              ON CONFLICT (id) DO UPDATE SET name = $3, role_type = $4, specific_role = $5, university = $6, study_program = $7, username = $8, password_hash = $9, email = $10, phone = $11`,
             [record.id, record.course_id, record.name, record.role_type, record.specific_role, record.university, record.study_program, record.username, record.password_hash, record.email, record.phone]
           );
-        } catch {
-          // ignore postgres error
+          console.log(`[PostgreSQL] Upserted instructor: ${record.name} (${record.role_type})`);
+        } catch (dbErr) {
+          console.error('[PostgreSQL Instructor Sync Error]:', dbErr);
         }
       }
     }
     return res.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[Sync Instructor Route Error]:', err);
     return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/instructor/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const idx = memoryInstructors.findIndex((i) => i.id === id);
+    if (idx >= 0) {
+      memoryInstructors.splice(idx, 1);
+    }
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM instructors_assistants WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted instructor ID: ${id}`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete Instructor Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
   }
 });
 
@@ -457,7 +693,7 @@ app.post('/api/sync/course', async (req: Request, res: Response) => {
         university_name: course.universityName || course.university_name || '',
         dates: Array.isArray(course.dates) ? course.dates : [],
         status: (course.status === 'inactive' ? 'inactive' : 'active') as 'active' | 'inactive',
-        created_at: course.createdAt || new Date().toISOString(),
+        created_at: course.createdAt || course.created_at || new Date().toISOString(),
       };
       if (idx >= 0) {
         memoryCourses[idx] = record;
@@ -473,14 +709,37 @@ app.post('/api/sync/course', async (req: Request, res: Response) => {
              ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, university_id = $4, university_name = $5, status = $6, updated_at = CURRENT_TIMESTAMP`,
             [record.id, record.name, record.description, record.university_id, record.university_name, record.status]
           );
-        } catch {
-          // ignore postgres error
+          console.log(`[PostgreSQL] Upserted course: ${record.name} (${record.status})`);
+        } catch (dbErr) {
+          console.error('[PostgreSQL Course Sync Error]:', dbErr);
         }
       }
     }
     return res.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[Sync Course Route Error]:', err);
     return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/course/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const idx = memoryCourses.findIndex((c) => c.id === id);
+    if (idx >= 0) {
+      memoryCourses.splice(idx, 1);
+    }
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM students WHERE course_id = $1', [id]);
+      await pgPool.query('DELETE FROM instructors_assistants WHERE course_id = $1', [id]);
+      await pgPool.query('DELETE FROM login_logs WHERE course_id = $1', [id]);
+      await pgPool.query('DELETE FROM courses WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted course ID: ${id} and related children`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete Course Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
   }
 });
 

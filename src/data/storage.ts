@@ -489,8 +489,8 @@ export const StorageService = {
   addCourse(course: Omit<Course, 'id' | 'createdAt'>): Course {
     const courses = this.getCourses();
     const newCourse: Course = {
-      status: 'active',
       ...course,
+      status: course.status || 'active',
       id: `crs-${Date.now().toString().slice(-6)}`,
       createdAt: new Date().toISOString(),
     };
@@ -549,6 +549,12 @@ export const StorageService = {
     this.saveInstructors(instructors);
     const logins = this.getLogins().filter((l) => l.courseId !== id);
     this.saveLogins(logins);
+
+    try {
+      fetch(`/api/sync/course/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
   },
 
   // ----------------------------------------------------------------
@@ -582,7 +588,7 @@ export const StorageService = {
     students.unshift(newStudent);
     this.saveStudents(students);
     
-    // Sync to backend for external auth verification
+    // Sync to backend for external auth verification and PostgreSQL persistence
     try {
       fetch('/api/sync/student', {
         method: 'POST',
@@ -618,6 +624,12 @@ export const StorageService = {
   deleteStudent(id: string): void {
     const students = this.getStudents().filter((s) => s.id !== id);
     this.saveStudents(students);
+
+    try {
+      fetch(`/api/sync/student/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
   },
 
   updateStudent(id: string, updates: Partial<Student>): Student | null {
@@ -632,7 +644,7 @@ export const StorageService = {
     students[index] = updatedStudent;
     this.saveStudents(students);
 
-    // Sync to backend for external auth verification
+    // Sync to backend for external auth verification and PostgreSQL persistence
     try {
       fetch('/api/sync/student', {
         method: 'POST',
@@ -677,7 +689,7 @@ export const StorageService = {
     list.unshift(newItem);
     this.saveInstructors(list);
 
-    // Sync to backend for external auth verification
+    // Sync to backend for external auth verification and PostgreSQL persistence
     try {
       fetch('/api/sync/instructor', {
         method: 'POST',
@@ -694,6 +706,12 @@ export const StorageService = {
   deleteInstructor(id: string): void {
     const list = this.getInstructors().filter((i) => i.id !== id);
     this.saveInstructors(list);
+
+    try {
+      fetch(`/api/sync/instructor/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
   },
 
   updateInstructor(id: string, updates: Partial<InstructorAssistant>): InstructorAssistant | null {
@@ -708,7 +726,7 @@ export const StorageService = {
     list[index] = updatedItem;
     this.saveInstructors(list);
 
-    // Sync to backend for external auth verification
+    // Sync to backend for external auth verification and PostgreSQL persistence
     try {
       fetch('/api/sync/instructor', {
         method: 'POST',
@@ -753,5 +771,34 @@ export const StorageService = {
     logins.unshift(newRecord);
     this.saveLogins(logins);
     return newRecord;
+  },
+
+  // ----------------------------------------------------------------
+  // Database Synchronization Method
+  // ----------------------------------------------------------------
+  async syncWithDatabase(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/data/all');
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (data && data.postgresConnected) {
+        if (Array.isArray(data.courses) && data.courses.length > 0) {
+          this.saveCourses(data.courses);
+        }
+        if (Array.isArray(data.students)) {
+          this.saveStudents(data.students);
+        }
+        if (Array.isArray(data.instructors)) {
+          this.saveInstructors(data.instructors);
+        }
+        if (Array.isArray(data.logins)) {
+          this.saveLogins(data.logins);
+        }
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
   },
 };

@@ -26,7 +26,7 @@ export interface Course {
   universityId?: string; // ID Perguruan Tinggi dari data referensi
   universityName?: string; // Nama Perguruan Tinggi dari data referensi
   dates: string[]; // Dynamic execution dates e.g. ['2026-11-02', '2026-11-09']
-  status?: CourseStatus; // 'active' | 'inactive'
+  status: CourseStatus; // 'active' | 'inactive'
   createdAt: string;
 }
 

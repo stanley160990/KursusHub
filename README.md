@@ -172,7 +172,14 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-#### 3. Verifikasi Status:
+#### 3. Inisialisasi Data Default (Opsional / Manual):
+Proses inisialisasi struktur skema tabel dilakukan secara otomatis tanpa menimpa data yang sudah ada. Jika ingin memasukkan data awal/default secara manual pada database baru:
+```bash
+# Jalankan inisialisasi data default di dalam container
+docker compose exec app npm run db:init
+```
+
+#### 4. Verifikasi Status:
 ```bash
 docker compose ps
 ```

@@ -10,9 +10,11 @@ import {
   X, 
   Check, 
   BookOpen,
-  Building2 
+  Building2,
+  CheckCircle2,
+  Power
 } from 'lucide-react';
-import { Course, Student, InstructorAssistant, University } from '../types';
+import { Course, Student, InstructorAssistant, University, CourseStatus } from '../types';
 
 interface CourseManagementProps {
   courses: Course[];
@@ -36,6 +38,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   onSelectCourseForStudents,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
 
@@ -43,6 +46,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [universityId, setUniversityId] = useState<string>('');
+  const [status, setStatus] = useState<CourseStatus>('active');
   const [dates, setDates] = useState<string[]>(['']);
   const [formError, setFormError] = useState('');
 
@@ -50,6 +54,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     setEditingCourseId(null);
     setName('');
     setDescription('');
+    setStatus('active');
     setUniversityId(universities[0]?.id || '');
     const today = new Date().toISOString().split('T')[0];
     setDates([today]);
@@ -61,6 +66,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     setEditingCourseId(course.id);
     setName(course.name);
     setDescription(course.description);
+    setStatus(course.status || 'active');
     setUniversityId(course.universityId || universities.find(u => u.name === course.universityName)?.id || universities[0]?.id || '');
     setDates(course.dates && course.dates.length > 0 ? [...course.dates] : ['']);
     setFormError('');
@@ -84,6 +90,11 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
     const updated = [...dates];
     updated[index] = value;
     setDates(updated);
+  };
+
+  const handleToggleStatus = (course: Course) => {
+    const newStatus: CourseStatus = (course.status || 'active') === 'active' ? 'inactive' : 'active';
+    onUpdateCourse(course.id, { status: newStatus });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -112,6 +123,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
         universityId: matchedUniv?.id || '',
         universityName: matchedUniv?.name || '',
         dates: validDates,
+        status,
       });
     } else {
       onAddCourse({
@@ -120,17 +132,27 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
         universityId: matchedUniv?.id || '',
         universityName: matchedUniv?.name || '',
         dates: validDates,
+        status,
       });
     }
 
     setIsModalOpen(false);
   };
 
-  const filteredCourses = courses.filter((c) =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.universityName && c.universityName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredCourses = courses
+    .filter((c) => {
+      if (statusFilter === 'active') return (c.status || 'active') === 'active';
+      if (statusFilter === 'inactive') return c.status === 'inactive';
+      return true;
+    })
+    .filter((c) =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.universityName && c.universityName.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+  const activeCount = courses.filter((c) => (c.status || 'active') === 'active').length;
+  const inactiveCount = courses.filter((c) => c.status === 'inactive').length;
 
   return (
     <div className="space-y-6">
@@ -147,11 +169,44 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Kelola nama kursus, perguruan tinggi mitra, deskripsi singkat, dan tanggal pelaksanaan dinamis.
+            Kelola nama kursus, perguruan tinggi mitra, deskripsi singkat, status (Active/Inactive), dan tanggal pelaksanaan.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Status Filter Tabs */}
+          <div className="flex items-center p-1 bg-slate-100 rounded-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                statusFilter === 'all' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Semua ({courses.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('active')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                statusFilter === 'active' ? 'bg-white text-emerald-800 shadow-xs font-bold' : 'text-slate-600 hover:text-emerald-800'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              <span>Active ({activeCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('inactive')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                statusFilter === 'inactive' ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Power className="w-3 h-3 text-slate-500" />
+              <span>Inactive ({inactiveCount})</span>
+            </button>
+          </div>
+
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -159,13 +214,14 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
               placeholder="Cari kursus atau kampus..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 text-slate-800 w-56"
+              className="pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 text-slate-800 w-48 sm:w-56"
             />
           </div>
+
           <button
             type="button"
             onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white rounded-xl shadow-xs hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white rounded-xl shadow-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
             style={{ backgroundColor: '#FF006E' }}
           >
             <Plus className="w-4 h-4" />
@@ -180,12 +236,12 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-sm font-semibold text-slate-700">Tidak ada kursus ditemukan</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Mulai dengan menambahkan kursus pertama Anda beserta perguruan tinggi mitra dan tanggal pelaksanaannya.
+            Mulai dengan menambahkan kursus pertama Anda beserta perguruan tinggi mitra, status aktif, dan tanggal pelaksanaannya.
           </p>
           <button
             type="button"
             onClick={openAddModal}
-            className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white rounded-lg"
+            className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white rounded-lg cursor-pointer"
             style={{ backgroundColor: '#FF006E' }}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -197,23 +253,52 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
           {filteredCourses.map((course) => {
             const courseStudentsCount = students.filter((s) => s.courseId === course.id).length;
             const courseInstructorsCount = instructors.filter((i) => i.courseId === course.id).length;
+            const isCourseActive = (course.status || 'active') === 'active';
 
             return (
               <div
                 key={course.id}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
+                className={`bg-white rounded-2xl border p-5 shadow-xs transition-all flex flex-col justify-between ${
+                  isCourseActive ? 'border-slate-200 hover:border-slate-300' : 'border-slate-200 bg-slate-50/60 opacity-80'
+                }`}
               >
                 <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">
-                      ID: {course.id}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-slate-400 font-semibold uppercase">
+                        ID: {course.id}
+                      </span>
+                      {/* Active / Inactive Status Badge & Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(course)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                          isCourseActive
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                            : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                        }`}
+                        title={`Status saat ini: ${isCourseActive ? 'Active' : 'Inactive'}. Klik untuk mengubah.`}
+                      >
+                        {isCourseActive ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Active</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power className="w-3 h-3 text-slate-500" />
+                            <span>Inactive</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => openEditModal(course)}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="Edit kursus"
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        title="Edit data & status kursus"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
@@ -224,7 +309,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                             onDeleteCourse(course.id);
                           }
                         }}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                         title="Hapus kursus"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -277,7 +362,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                     <button
                       type="button"
                       onClick={() => onSelectCourseForStudents(course.id)}
-                      className="flex items-center gap-1 text-slate-600 hover:text-pink-600 font-medium transition-colors"
+                      className="flex items-center gap-1 text-slate-600 hover:text-pink-600 font-medium transition-colors cursor-pointer"
                       title="Lihat mahasiswa kursus ini"
                     >
                       <GraduationCap className="w-3.5 h-3.5 text-slate-400" />
@@ -292,7 +377,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   <button
                     type="button"
                     onClick={() => onSelectCourseForStudents(course.id)}
-                    className="text-xs font-semibold hover:underline"
+                    className="text-xs font-semibold hover:underline cursor-pointer"
                     style={{ color: '#FF006E' }}
                   >
                     Kelola Mahasiswa →
@@ -340,6 +425,40 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-500 text-slate-800"
                 />
+              </div>
+
+              {/* Status Active / Inactive Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Status Kursus <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStatus('active')}
+                    className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      status === 'active'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/20'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CheckCircle2 className={`w-4 h-4 ${status === 'active' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span>Active (Aktif)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStatus('inactive')}
+                    className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      status === 'inactive'
+                        ? 'bg-slate-100 border-slate-400 text-slate-800 ring-2 ring-slate-400/20'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Power className={`w-4 h-4 ${status === 'inactive' ? 'text-slate-600' : 'text-slate-400'}`} />
+                    <span>Inactive (Tidak Aktif)</span>
+                  </button>
+                </div>
               </div>
 
               {/* Dropdown Perguruan Tinggi (Diambil dari Data Referensi) */}
@@ -392,7 +511,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                   <button
                     type="button"
                     onClick={handleAddDateField}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-200 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-200 transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Tambah Tanggal</span>
@@ -413,7 +532,7 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveDateField(index)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
                         title="Hapus tanggal ini"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -427,13 +546,13 @@ export const CourseManagement: React.FC<CourseManagementProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-xl shadow-xs hover:opacity-90 transition-all"
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-xl shadow-xs hover:opacity-90 transition-all cursor-pointer"
                   style={{ backgroundColor: '#FF006E' }}
                 >
                   <Check className="w-3.5 h-3.5" />

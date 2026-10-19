@@ -96,7 +96,7 @@ export const LoginLogsViewer: React.FC<LoginLogsViewerProps> = ({
             >
               {courses.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.name} ({c.status === 'inactive' ? 'Inactive' : 'Active'})
                 </option>
               ))}
             </select>

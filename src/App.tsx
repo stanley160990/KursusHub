@@ -84,6 +84,9 @@ export default function App() {
   }, [selectedCourseId]);
 
   useEffect(() => {
+    StorageService.syncWithDatabase().then(() => {
+      refreshAllData();
+    });
     refreshAllData();
   }, [refreshAllData]);
 
