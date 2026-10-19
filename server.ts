@@ -75,6 +75,16 @@ async function initDatabaseSchema() {
       );
     `);
 
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS course_dates (
+        id SERIAL PRIMARY KEY,
+        course_id VARCHAR(64) NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        execution_date DATE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT uq_course_date UNIQUE (course_id, execution_date)
+      );
+    `);
+
     // Ensure columns exist on existing databases
     await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS faculty_id VARCHAR(64);`);
     await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS faculty_name VARCHAR(255);`);
@@ -567,12 +577,29 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
   try {
     if (pgPool && pgConnected) {
       const coursesRes = await pgPool.query('SELECT * FROM courses ORDER BY created_at DESC');
+      const datesRes = await pgPool.query('SELECT course_id, execution_date FROM course_dates ORDER BY execution_date ASC');
       const studentsRes = await pgPool.query('SELECT * FROM students ORDER BY created_at DESC');
       const instructorsRes = await pgPool.query('SELECT * FROM instructors_assistants ORDER BY created_at DESC');
       const loginsRes = await pgPool.query('SELECT * FROM login_logs ORDER BY created_at DESC');
       const univsRes = await pgPool.query('SELECT * FROM universities ORDER BY created_at ASC');
       const facsRes = await pgPool.query('SELECT * FROM faculties ORDER BY created_at ASC');
       const prodsRes = await pgPool.query('SELECT * FROM study_programs ORDER BY created_at ASC');
+
+      const datesMap: Record<string, string[]> = {};
+      for (const r of datesRes.rows) {
+        if (!datesMap[r.course_id]) {
+          datesMap[r.course_id] = [];
+        }
+        let dateStr = '';
+        if (r.execution_date instanceof Date) {
+          dateStr = r.execution_date.toISOString().split('T')[0];
+        } else {
+          dateStr = String(r.execution_date).split('T')[0];
+        }
+        if (dateStr && !datesMap[r.course_id].includes(dateStr)) {
+          datesMap[r.course_id].push(dateStr);
+        }
+      }
 
       const mappedUniversities = univsRes.rows.map((u) => {
         const univFacs = facsRes.rows
@@ -606,7 +633,7 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
         facultyName: c.faculty_name || '',
         studyProgramId: c.study_program_id || '',
         studyProgramName: c.study_program_name || '',
-        dates: [],
+        dates: datesMap[c.id] || [],
         status: c.status || 'active',
         createdAt: c.created_at,
       }));
@@ -943,7 +970,23 @@ app.post('/api/sync/course', async (req: Request, res: Response) => {
              ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, university_id = $4, university_name = $5, faculty_id = $6, faculty_name = $7, study_program_id = $8, study_program_name = $9, status = $10, updated_at = CURRENT_TIMESTAMP`,
             [record.id, record.name, record.description, record.university_id, record.university_name, record.faculty_id, record.faculty_name, record.study_program_id, record.study_program_name, record.status]
           );
-          console.log(`[PostgreSQL] Upserted course: ${record.name} (${record.status})`);
+
+          // Delete existing dates and re-insert new execution dates
+          await pgPool.query('DELETE FROM course_dates WHERE course_id = $1', [record.id]);
+          if (Array.isArray(record.dates)) {
+            for (const dStr of record.dates) {
+              const cleanDate = String(dStr).trim();
+              if (cleanDate) {
+                await pgPool.query(
+                  `INSERT INTO course_dates (course_id, execution_date)
+                   VALUES ($1, $2)
+                   ON CONFLICT (course_id, execution_date) DO NOTHING`,
+                  [record.id, cleanDate]
+                );
+              }
+            }
+          }
+          console.log(`[PostgreSQL] Upserted course: ${record.name} (${record.status}) with ${record.dates.length} execution dates`);
         } catch (dbErr) {
           console.error('[PostgreSQL Course Sync Error]:', dbErr);
         }
