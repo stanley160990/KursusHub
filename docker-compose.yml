@@ -21,7 +21,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/01_init-db.sql:ro
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01_init-db.sql:z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kursushub_db}"]
       interval: 10s

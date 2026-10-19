@@ -3,7 +3,7 @@
 # Copyright 2026 - halkh-systems.com
 # ====================================================================
 
-FROM node:20-alpine AS builder
+FROM node:lts-alpine3.24 AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production Runner
-FROM node:20-alpine AS runner
+FROM node:lts-alpine3.24 AS runner
 
 WORKDIR /app
 
