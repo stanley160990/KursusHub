@@ -27,13 +27,26 @@ async function runDatabaseInitialization() {
     const client = await pool.connect();
     console.log('[PostgreSQL] Connected successfully to database server.');
 
-    const sqlPath = path.resolve(__dirname, '../init-db.sql');
-    if (!fs.existsSync(sqlPath)) {
-      throw new Error(`File SQL inisialisasi tidak ditemukan di: ${sqlPath}`);
+    const possiblePaths = [
+      path.resolve(__dirname, '../init-db.sql'),
+      path.resolve(__dirname, './init-db.sql'),
+      path.resolve(process.cwd(), 'init-db.sql'),
+    ];
+
+    let sqlPath = '';
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        sqlPath = p;
+        break;
+      }
+    }
+
+    if (!sqlPath) {
+      throw new Error(`File SQL inisialisasi (init-db.sql) tidak ditemukan.`);
     }
 
     const sqlContent = fs.readFileSync(sqlPath, 'utf8');
-    console.log('[PostgreSQL] Executing SQL initialization script (init-db.sql)...');
+    console.log(`[PostgreSQL] Executing SQL initialization script from ${sqlPath}...`);
 
     await client.query(sqlContent);
     console.log('[PostgreSQL] Database schema and initial default dataset initialized successfully!');

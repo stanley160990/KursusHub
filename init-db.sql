@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS courses (
     description TEXT NOT NULL,
     university_id VARCHAR(64) REFERENCES universities(id) ON DELETE SET NULL,
     university_name VARCHAR(255),
+    faculty_id VARCHAR(64) REFERENCES faculties(id) ON DELETE SET NULL,
+    faculty_name VARCHAR(255),
+    study_program_id VARCHAR(64) REFERENCES study_programs(id) ON DELETE SET NULL,
+    study_program_name VARCHAR(255),
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -149,8 +153,8 @@ BEGIN
         ('pro-17', 'fac-unpad-01', 'Teknik Informatika');
 
         -- Insert Default Course 1
-        INSERT INTO courses (id, name, description, university_id, university_name) VALUES 
-        ('crs-01', 'Arsitektur Cloud & DevOps Modern', 'Pelatihan intensif arsitektur cloud AWS/GCP, containerization Docker, dan pipeline CI/CD tingkat lanjut.', 'univ-01', 'Universitas Indonesia');
+        INSERT INTO courses (id, name, description, university_id, university_name, faculty_id, faculty_name, study_program_id, study_program_name) VALUES 
+        ('crs-01', 'Arsitektur Cloud & DevOps Modern', 'Pelatihan intensif arsitektur cloud AWS/GCP, containerization Docker, dan pipeline CI/CD tingkat lanjut.', 'univ-01', 'Universitas Indonesia', 'fac-ui-01', 'Fakultas Ilmu Komputer', 'pro-01', 'Teknik Informatika');
         
         -- Insert Dynamic Dates for Course 1
         INSERT INTO course_dates (course_id, execution_date) VALUES
@@ -159,8 +163,8 @@ BEGIN
         ('crs-01', '2026-11-16');
 
         -- Insert Default Course 2
-        INSERT INTO courses (id, name, description, university_id, university_name) VALUES 
-        ('crs-02', 'Full-Stack Web Engineering dengan React & Node.js', 'Pengembangan aplikasi web end-to-end dengan RESTful API, database relational, dan deployment container.', 'univ-02', 'Institut Teknologi Bandung');
+        INSERT INTO courses (id, name, description, university_id, university_name, faculty_id, faculty_name, study_program_id, study_program_name) VALUES 
+        ('crs-02', 'Full-Stack Web Engineering dengan React & Node.js', 'Pengembangan aplikasi web end-to-end dengan RESTful API, database relational, dan deployment container.', 'univ-02', 'Institut Teknologi Bandung', 'fac-itb-01', 'Sekolah Teknik Elektro & Informatika', 'pro-08', 'Teknik Informatika');
 
         -- Insert Dynamic Dates for Course 2
         INSERT INTO course_dates (course_id, execution_date) VALUES

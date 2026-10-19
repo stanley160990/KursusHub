@@ -35,11 +35,11 @@ RUN apk add --no-cache curl
 
 # Copy application and built artifacts from builder stage
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/init-db.ts ./init-db.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/init-db.sql ./init-db.sql
 COPY --from=builder /app/index.html ./index.html

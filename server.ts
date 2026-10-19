@@ -65,11 +65,22 @@ async function initDatabaseSchema() {
         description TEXT NOT NULL,
         university_id VARCHAR(64),
         university_name VARCHAR(255),
+        faculty_id VARCHAR(64),
+        faculty_name VARCHAR(255),
+        study_program_id VARCHAR(64),
+        study_program_name VARCHAR(255),
         status VARCHAR(20) DEFAULT 'active',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Ensure columns exist on existing databases
+    await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS faculty_id VARCHAR(64);`);
+    await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS faculty_name VARCHAR(255);`);
+    await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS study_program_id VARCHAR(64);`);
+    await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS study_program_name VARCHAR(255);`);
+    await pgPool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';`);
 
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS students (
@@ -239,6 +250,10 @@ interface InMemoryCourse {
   description: string;
   university_id?: string;
   university_name?: string;
+  faculty_id?: string;
+  faculty_name?: string;
+  study_program_id?: string;
+  study_program_name?: string;
   dates: string[];
   status: 'active' | 'inactive';
   created_at: string;
@@ -582,6 +597,10 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
         description: c.description || '',
         universityId: c.university_id || '',
         universityName: c.university_name || '',
+        facultyId: c.faculty_id || '',
+        facultyName: c.faculty_name || '',
+        studyProgramId: c.study_program_id || '',
+        studyProgramName: c.study_program_name || '',
         dates: [],
         status: c.status || 'active',
         createdAt: c.created_at,
@@ -897,6 +916,10 @@ app.post('/api/sync/course', async (req: Request, res: Response) => {
         description: course.description || '',
         university_id: course.universityId || course.university_id || '',
         university_name: course.universityName || course.university_name || '',
+        faculty_id: course.facultyId || course.faculty_id || '',
+        faculty_name: course.facultyName || course.faculty_name || '',
+        study_program_id: course.studyProgramId || course.study_program_id || '',
+        study_program_name: course.studyProgramName || course.study_program_name || '',
         dates: Array.isArray(course.dates) ? course.dates : [],
         status: (course.status === 'inactive' ? 'inactive' : 'active') as 'active' | 'inactive',
         created_at: course.createdAt || course.created_at || new Date().toISOString(),
@@ -910,10 +933,10 @@ app.post('/api/sync/course', async (req: Request, res: Response) => {
       if (pgPool && pgConnected) {
         try {
           await pgPool.query(
-            `INSERT INTO courses (id, name, description, university_id, university_name, status)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, university_id = $4, university_name = $5, status = $6, updated_at = CURRENT_TIMESTAMP`,
-            [record.id, record.name, record.description, record.university_id, record.university_name, record.status]
+            `INSERT INTO courses (id, name, description, university_id, university_name, faculty_id, faculty_name, study_program_id, study_program_name, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, university_id = $4, university_name = $5, faculty_id = $6, faculty_name = $7, study_program_id = $8, study_program_name = $9, status = $10, updated_at = CURRENT_TIMESTAMP`,
+            [record.id, record.name, record.description, record.university_id, record.university_name, record.faculty_id, record.faculty_name, record.study_program_id, record.study_program_name, record.status]
           );
           console.log(`[PostgreSQL] Upserted course: ${record.name} (${record.status})`);
         } catch (dbErr) {
