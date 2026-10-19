@@ -1061,6 +1061,66 @@ app.post('/api/external/logins', async (req: Request, res: Response) => {
   }
 });
 
+interface CourseInfoResult {
+  course_id: string;
+  course_name: string;
+  tgl_kursus: string[];
+  active: boolean;
+}
+
+async function fetchCourseInfo(courseId: string): Promise<CourseInfoResult> {
+  if (!courseId) {
+    return {
+      course_id: '',
+      course_name: '',
+      tgl_kursus: [],
+      active: false,
+    };
+  }
+
+  if (pgPool && pgConnected) {
+    try {
+      const cRes = await pgPool.query('SELECT * FROM courses WHERE id = $1 LIMIT 1', [courseId]);
+      if (cRes.rows.length > 0) {
+        const cRow = cRes.rows[0];
+        const datesRes = await pgPool.query('SELECT execution_date FROM course_dates WHERE course_id = $1 ORDER BY execution_date ASC', [courseId]);
+        const tglList = datesRes.rows.map((r) => {
+          if (r.execution_date instanceof Date) {
+            return r.execution_date.toISOString().split('T')[0];
+          }
+          return String(r.execution_date).split('T')[0];
+        });
+
+        return {
+          course_id: cRow.id,
+          course_name: cRow.name || '',
+          tgl_kursus: tglList,
+          active: (cRow.status || 'active') === 'active',
+        };
+      }
+    } catch (err) {
+      console.warn('[PostgreSQL Fetch Course Info Warning]:', err);
+    }
+  }
+
+  const memCourse = memoryCourses.find((c) => c.id === courseId);
+  if (memCourse) {
+    return {
+      course_id: memCourse.id,
+      course_name: memCourse.name || '',
+      tgl_kursus: Array.isArray(memCourse.dates) ? memCourse.dates : [],
+      active: (memCourse.status || 'active') === 'active',
+    };
+  }
+
+  return {
+    course_id: courseId,
+    course_name: '',
+    tgl_kursus: [],
+    active: true,
+  };
+}
+
 // ------------------------------------------------------------------
 // REQUIRED EXTERNAL API 2: POST /api/external/auth
 // User authentication endpoint for external applications (Students, Instructors/Assistants, Admin)
@@ -1173,6 +1233,7 @@ app.post('/api/external/auth', async (req: Request, res: Response) => {
       }
 
       if (isMatch) {
+        const courseInfo = await fetchCourseInfo(foundStudent.course_id);
         return res.json({
           status: 'success',
           code: 'AUTHENTICATED',
@@ -1190,6 +1251,7 @@ app.post('/api/external/auth', async (req: Request, res: Response) => {
             study_program: foundStudent.study_program,
             access_hours: foundStudent.access_hours,
             role: 'Mahasiswa Kursus',
+            courses_info: courseInfo,
             authenticated_at: generateCurrentGMT(),
           },
         });
@@ -1258,6 +1320,7 @@ app.post('/api/external/auth', async (req: Request, res: Response) => {
       }
 
       if (isMatch) {
+        const courseInfo = await fetchCourseInfo(foundInstructor.course_id);
         return res.json({
           status: 'success',
           code: 'AUTHENTICATED',
@@ -1275,6 +1338,7 @@ app.post('/api/external/auth', async (req: Request, res: Response) => {
             email: foundInstructor.email,
             phone: foundInstructor.phone,
             role: foundInstructor.role_type === 'instruktur' ? 'Instruktur Kursus' : 'Asisten Kursus',
+            courses_info: courseInfo,
             authenticated_at: generateCurrentGMT(),
           },
         });
