@@ -394,6 +394,17 @@ export const StorageService = {
     };
     list.unshift(newUniv);
     this.saveUniversities(list);
+
+    try {
+      fetch('/api/sync/university', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUniv),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return newUniv;
   },
 
@@ -403,12 +414,29 @@ export const StorageService = {
     if (idx === -1) return null;
     list[idx] = { ...list[idx], ...updates };
     this.saveUniversities(list);
+
+    try {
+      fetch('/api/sync/university', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(list[idx]),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return list[idx];
   },
 
   deleteUniversity(id: string): void {
     const list = this.getUniversities().filter((u) => u.id !== id);
     this.saveUniversities(list);
+
+    try {
+      fetch(`/api/sync/university/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
   },
 
   addFaculty(universityId: string, facultyName: string): University | null {
@@ -423,6 +451,17 @@ export const StorageService = {
     };
     univ.faculties.push(newFaculty);
     this.saveUniversities(list);
+
+    try {
+      fetch('/api/sync/faculty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ universityId, faculty: newFaculty }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return univ;
   },
 
@@ -433,6 +472,13 @@ export const StorageService = {
 
     univ.faculties = univ.faculties.filter((f) => f.id !== facultyId);
     this.saveUniversities(list);
+
+    try {
+      fetch(`/api/sync/faculty/${facultyId}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return univ;
   },
 
@@ -444,11 +490,23 @@ export const StorageService = {
     const fac = univ.faculties.find((f) => f.id === facultyId);
     if (!fac) return null;
 
-    fac.studyPrograms.push({
+    const newProg = {
       id: `pro-${Date.now().toString().slice(-6)}`,
       name: programName.trim(),
-    });
+    };
+    fac.studyPrograms.push(newProg);
     this.saveUniversities(list);
+
+    try {
+      fetch('/api/sync/study_program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facultyId, program: newProg }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return univ;
   },
 
@@ -462,6 +520,13 @@ export const StorageService = {
 
     fac.studyPrograms = fac.studyPrograms.filter((p) => p.id !== programId);
     this.saveUniversities(list);
+
+    try {
+      fetch(`/api/sync/study_program/${programId}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return univ;
   },
 
@@ -782,6 +847,9 @@ export const StorageService = {
       if (!res.ok) return false;
       const data = await res.json();
       if (data && data.postgresConnected) {
+        if (Array.isArray(data.universities) && data.universities.length > 0) {
+          this.saveUniversities(data.universities);
+        }
         if (Array.isArray(data.courses) && data.courses.length > 0) {
           this.saveCourses(data.courses);
         }

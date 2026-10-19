@@ -41,6 +41,24 @@ async function initDatabaseSchema() {
     `);
 
     await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS faculties (
+        id VARCHAR(64) PRIMARY KEY,
+        university_id VARCHAR(64) NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS study_programs (
+        id VARCHAR(64) PRIMARY KEY,
+        faculty_id VARCHAR(64) NOT NULL REFERENCES faculties(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS courses (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -98,7 +116,26 @@ async function initDatabaseSchema() {
       );
     `);
 
-    console.log('[PostgreSQL] Database schema structure verified successfully.');
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS admin_users (
+        id VARCHAR(64) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        last_login_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Always seed default admin user into PostgreSQL admin_users table
+    const adminPassHash = await bcrypt.hash(ADMIN_PASS, 10);
+    await pgPool.query(
+      `INSERT INTO admin_users (id, username, password_hash)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (username) DO NOTHING`,
+      ['admin-01', ADMIN_USER, adminPassHash]
+    );
+
+    console.log('[PostgreSQL] Database schema structure & admin user verified successfully.');
 
     // Optional seeding only when explicitly requested via env variable SEED_DEFAULT_DATA=true
     if (process.env.SEED_DEFAULT_DATA === 'true') {
@@ -447,10 +484,45 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Username dan password wajib diisi.' });
   }
 
-  const isUserValid = username === ADMIN_USER;
-  const isPassValid = password === ADMIN_PASS;
+  let authenticated = false;
+  let adminUsername = username;
 
-  if (!isUserValid || !isPassValid) {
+  if (pgPool && pgConnected) {
+    try {
+      const dbResult = await pgPool.query('SELECT * FROM admin_users WHERE username = $1', [username]);
+      if (dbResult.rows.length > 0) {
+        const dbAdmin = dbResult.rows[0];
+        let match = false;
+        if (password === dbAdmin.password_hash) {
+          match = true;
+        } else {
+          try {
+            match = await bcrypt.compare(password, dbAdmin.password_hash);
+          } catch {
+            match = false;
+          }
+        }
+        if (match) {
+          authenticated = true;
+          adminUsername = dbAdmin.username;
+          await pgPool.query('UPDATE admin_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [dbAdmin.id]);
+        }
+      }
+    } catch (err) {
+      console.error('[PostgreSQL Admin Auth Error]:', err);
+    }
+  }
+
+  if (!authenticated) {
+    const isUserValid = username === ADMIN_USER;
+    const isPassValid = password === ADMIN_PASS;
+    if (isUserValid && isPassValid) {
+      authenticated = true;
+      adminUsername = ADMIN_USER;
+    }
+  }
+
+  if (!authenticated) {
     return res.status(401).json({ error: 'Kredensial login admin tidak valid.' });
   }
 
@@ -460,7 +532,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     success: true,
     message: 'Login berhasil.',
     admin: {
-      username: ADMIN_USER,
+      username: adminUsername,
       token,
       sessionTimeoutMinutes: 15,
       expiresAt: Date.now() + 15 * 60 * 1000,
@@ -478,6 +550,31 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
       const studentsRes = await pgPool.query('SELECT * FROM students ORDER BY created_at DESC');
       const instructorsRes = await pgPool.query('SELECT * FROM instructors_assistants ORDER BY created_at DESC');
       const loginsRes = await pgPool.query('SELECT * FROM login_logs ORDER BY created_at DESC');
+      const univsRes = await pgPool.query('SELECT * FROM universities ORDER BY created_at ASC');
+      const facsRes = await pgPool.query('SELECT * FROM faculties ORDER BY created_at ASC');
+      const prodsRes = await pgPool.query('SELECT * FROM study_programs ORDER BY created_at ASC');
+
+      const mappedUniversities = univsRes.rows.map((u) => {
+        const univFacs = facsRes.rows
+          .filter((f) => f.university_id === u.id)
+          .map((f) => {
+            const facProds = prodsRes.rows
+              .filter((p) => p.faculty_id === f.id)
+              .map((p) => ({ id: p.id, name: p.name }));
+            return {
+              id: f.id,
+              name: f.name,
+              studyPrograms: facProds,
+            };
+          });
+        return {
+          id: u.id,
+          code: u.code || '',
+          name: u.name,
+          faculties: univFacs,
+          createdAt: u.created_at,
+        };
+      });
 
       const mappedCourses = coursesRes.rows.map((c) => ({
         id: c.id,
@@ -531,6 +628,7 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
 
       return res.json({
         postgresConnected: true,
+        universities: mappedUniversities,
         courses: mappedCourses,
         students: mappedStudents,
         instructors: mappedInstructors,
@@ -548,6 +646,114 @@ app.get('/api/data/all', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('[PostgreSQL Fetch All Data Error]:', err);
     return res.status(500).json({ postgresConnected: false, error: String(err) });
+  }
+});
+
+// ------------------------------------------------------------------
+// Reference Data Sync (Universities, Faculties, Study Programs)
+// ------------------------------------------------------------------
+app.post('/api/sync/university', async (req: Request, res: Response) => {
+  try {
+    const univ = req.body;
+    if (univ && univ.id && univ.name) {
+      if (pgPool && pgConnected) {
+        await pgPool.query(
+          `INSERT INTO universities (id, code, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO UPDATE SET code = $2, name = $3`,
+          [univ.id, univ.code || '', univ.name]
+        );
+        console.log(`[PostgreSQL] Upserted university: ${univ.name} (${univ.id})`);
+      }
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Sync University Error]:', err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/university/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM universities WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted university ID: ${id}`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete University Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+app.post('/api/sync/faculty', async (req: Request, res: Response) => {
+  try {
+    const { universityId, faculty } = req.body;
+    if (universityId && faculty && faculty.id && faculty.name) {
+      if (pgPool && pgConnected) {
+        await pgPool.query(
+          `INSERT INTO faculties (id, university_id, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO UPDATE SET name = $3`,
+          [faculty.id, universityId, faculty.name]
+        );
+        console.log(`[PostgreSQL] Upserted faculty: ${faculty.name} (${faculty.id})`);
+      }
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Sync Faculty Error]:', err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/faculty/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM faculties WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted faculty ID: ${id}`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete Faculty Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
+  }
+});
+
+app.post('/api/sync/study_program', async (req: Request, res: Response) => {
+  try {
+    const { facultyId, program } = req.body;
+    if (facultyId && program && program.id && program.name) {
+      if (pgPool && pgConnected) {
+        await pgPool.query(
+          `INSERT INTO study_programs (id, faculty_id, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (id) DO UPDATE SET name = $3`,
+          [program.id, facultyId, program.name]
+        );
+        console.log(`[PostgreSQL] Upserted study program: ${program.name} (${program.id})`);
+      }
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Sync Study Program Error]:', err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+app.delete('/api/sync/study_program/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (pgPool && pgConnected) {
+      await pgPool.query('DELETE FROM study_programs WHERE id = $1', [id]);
+      console.log(`[PostgreSQL] Deleted study program ID: ${id}`);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[PostgreSQL Delete Study Program Error]:', err);
+    return res.status(500).json({ success: false, error: String(err) });
   }
 });
 

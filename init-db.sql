@@ -189,10 +189,15 @@ BEGIN
         ('log-02', 'crs-01', 'G0143502', 'Siti Rahmawati', 'Monday, 18 Oct 2026 08:12:30 GMT', '192.168.1.28'),
         ('log-03', 'crs-02', 'G0143503', 'Ahmad Fauzi', 'Monday, 18 Oct 2026 13:02:45 GMT', '192.168.1.42');
 
+        -- Insert Default Admin User
+        INSERT INTO admin_users (id, username, password_hash) VALUES
+        ('admin-01', 'admin', '$2a$10$wKqK6GZlWcM7Rz2PZlWcMOkQ1lJ7Kz3R6tS5u8V9w0xYz1A2B3C4D')
+        ON CONFLICT (username) DO NOTHING;
+
         -- Record system metadata
         INSERT INTO system_metadata (key, value) VALUES ('default_migration_status', 'seeded_successfully');
         
-        RAISE NOTICE 'Default migration dataset with universities seeded successfully.';
+        RAISE NOTICE 'Default migration dataset with universities and admin user seeded successfully.';
     ELSE
         RAISE NOTICE 'Data already exists in database. Skipping default migration.';
     END IF;
